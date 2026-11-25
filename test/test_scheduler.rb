@@ -1,13 +1,15 @@
-require_relative 'test_case'
-# require_relative '../lib/ncbo_cron'
+require 'minitest/unit'
+MiniTest::Unit.autorun
 
-class TestScheduler < TestCase
+require_relative '../lib/ncbo_cron'
+
+class TestScheduler < MiniTest::Unit::TestCase
   def test_scheduler
     begin
       logger = Logger.new($stdout)
       logger.level = Logger::ERROR
       options = {
-        job_name: 'test_scheduled_job',
+        job_name: "test_scheduled_job",
         seconds_between: 1,
         redis_host: NcboCron.settings.redis_host,
         redis_port: NcboCron.settings.redis_port,
@@ -16,15 +18,14 @@ class TestScheduler < TestCase
 
       # Create a simple TCPServer to listen from the fork
       require 'socket'
-      listen_string = ''
-      port = TestCase.unused_port
-
+      listen_string = ""
+      port = Random.rand(55000..65535) # http://en.wikipedia.org/wiki/List_of_TCP_and_UDP_port_numbers#Dynamic.2C_private_or_ephemeral_ports
       socket_server = Thread.new do
         server = TCPServer.new(port)
-        loop do
+        loop {
           session = server.accept
           listen_string << session.gets
-        end
+        }
       end
 
       # Spawn a thread with a job that takes a while to finish
@@ -57,10 +58,9 @@ class TestScheduler < TestCase
   end
 
   def test_scheduler_locking
-    skip 'Skip: issues only on Apple Silicon + AllegroGraph in local dev.'
     begin
       options = {
-        job_name: 'test_scheduled_job_locking',
+        job_name: "test_scheduled_job_locking",
         seconds_between: 5,
         redis_host: NcboCron.settings.redis_host,
         redis_port: NcboCron.settings.redis_port
@@ -68,14 +68,14 @@ class TestScheduler < TestCase
 
       # Create a simple TCPServer to listen from the fork
       require 'socket'
-      listen_string = ''
-      port = TestCase.unused_port
+      listen_string = ""
+      port = Random.rand(55000..65535) # http://en.wikipedia.org/wiki/List_of_TCP_and_UDP_port_numbers#Dynamic.2C_private_or_ephemeral_ports
       socket_server = Thread.new do
         server = TCPServer.new(port)
-        loop do
+        loop {
           session = server.accept
           listen_string << session.gets
-        end
+        }
       end
 
       # Spawn a thread with a job that takes a while to finish
@@ -104,8 +104,8 @@ class TestScheduler < TestCase
 
       assert job1_thread.alive?
       assert job2_thread.alive?
-      assert_includes listen_string, 'JOB1'
-      refute_includes listen_string, 'JOB2'
+      assert listen_string.include?("JOB1")
+      refute listen_string.include?("JOB2")
       job1_thread.kill
       job1_thread.join
       refute job1_thread.alive?
@@ -126,5 +126,5 @@ class TestScheduler < TestCase
         socket_server.join
       end
     end
-  end
+   end
 end

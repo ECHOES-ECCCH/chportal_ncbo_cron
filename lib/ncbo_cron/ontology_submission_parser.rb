@@ -92,7 +92,7 @@ module NcboCron
         zombies
       end
 
-      def process_flush_classes(logger)
+      def process_flush_classes(logger, remove_zombie_graphs=false)
         onts = LinkedData::Models::Ontology.where.include(:acronym,:summaryOnly).all
         status_archived = LinkedData::Models::SubmissionStatus.find("ARCHIVED").first
         deleted = []
@@ -135,6 +135,12 @@ module NcboCron
 
         zombie_classes_graphs.each do |zg|
           logger.info("Zombie class graph #{zg}"); logger.flush
+          # Not deleting zombie graph by default. Enable it with config.remove_zombie_graphs = true
+          if !remove_zombie_graphs.nil? && remove_zombie_graphs == true
+            Goo.sparql_data_client.delete_graph(RDF::URI.new(zg))
+            logger.info "DELETED #{zg} graph"
+            deleted << zg
+          end
         end
 
         logger.info("finish process_flush_classes"); logger.flush
@@ -150,7 +156,7 @@ module NcboCron
         if sub
           sub.bring_remaining
           sub.ontology.bring(:acronym)
-          FileUtils.mkdir_p(sub.data_folder)
+          FileUtils.mkdir_p(sub.data_folder) unless Dir.exist?(sub.data_folder)
           log_path = sub.parsing_log_path
           logger.info "Logging parsing output to #{log_path}"
           logger1 = Logger.new(log_path)
@@ -210,6 +216,7 @@ module NcboCron
         logger.debug "Completed archiving submissions previous to #{sub.id.to_s}"
       end
 
+      # Add new ontology terms to the Annotator
       def process_annotator(logger, sub)
         parsed = sub.ready?(status: [:rdf, :rdf_labels])
 

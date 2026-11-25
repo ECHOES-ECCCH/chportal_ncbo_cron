@@ -1,5 +1,7 @@
 #!/usr/bin/env ruby
 
+$0 = "ncbo_ontology_pull"
+
 # Exit cleanly from an early interrupt
 Signal.trap("INT") { exit 1 }
 
@@ -11,9 +13,6 @@ require 'redis'
 require_relative '../lib/ncbo_cron'
 require_relative '../config/config'
 require 'optparse'
-
-# do not send notifications to ontology owners when running this script
-LinkedData.settings.enable_notifications = false
 
 ontology_acronym = ''
 opt_parser = OptionParser.new do |opts|
@@ -31,8 +30,12 @@ opt_parser.parse!
 
 logger = Logger.new($stdout)
 logger.info "Starting ncbo pull"; logger.flush
+puller = NcboCron::Models::OntologyPull.new
 begin
-  NcboCron::Helpers::OntologyHelper.do_ontology_pull(ontology_acronym, logger: logger, enable_pull_umls: true)
+  puller.do_ontology_pull(ontology_acronym, logger: logger , isLong: false ,enable_pull_umls:true, options: {})
+rescue NcboCron::Models::OntologyPull::RemoteFileException => e
+  logger.error e.message
+  logger.flush
 rescue StandardError => e
   logger.error e.message
   logger.flush
