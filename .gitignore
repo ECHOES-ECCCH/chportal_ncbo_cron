@@ -1,18 +1,20 @@
+.bundle/
 # Ignore RubyMine editor files
 .idea/
 config/config.rb
+config/appliance.rb
 config/config_*.rb
 config/*.p12
 config/*.json
 data/
 projectFilesBackup/
-.bundle
-.ruby-version
 repo*
 *.turtle
 *.swp
 .DS_Store
 tmp
+
+vendor/bundle/*
 
 # Code coverage reports
 coverage*
@@ -28,3 +30,11 @@ logs/
 
 # Ignore jEnv files
 .java-version
+
+processed_files/
+
+queries.txt
+
+graph_comparison.csv
+
+.env

@@ -9,6 +9,8 @@ module NcboCron
       PROCESS_ACTIONS = {
         :process_rdf => true,
         :generate_labels => true,
+        :extract_metadata => true,
+        :index_all_data => true,
         :index_search => true,
         :index_properties => true,
         :run_metrics => true,
@@ -21,42 +23,20 @@ module NcboCron
         attr_reader :submission
 
         def initialize(submission)
+          super
           @submission = submission
-          location = submission.pullLocation || "unspecified location"
-          super("RemoteFileException: No remote file found for submission #{submission.id} at #{location}")
         end
       end
 
-      class MissingPullLocationException < StandardError
-        attr_reader :acronym
-
-        def initialize(acronym)
-          super("MissingPullLocationException: Ontology #{acronym} has no pullLocation")
-          @acronym = acronym
-        end
-      end
-
-      class NoSubmissionException < StandardError
-        attr_reader :acronym
-
-        def initialize(acronym)
-          @acronym = acronym
-          super("NoSubmissionEception: No submission found for ontology #{acronym}")
-        end
-      end
-
-      def self.do_ontology_pull(ontology_acronym,
-                                enable_pull_umls: false,
-                                umls_download_url: '',
-                                logger: nil,
-                                add_to_queue: true)
+      def self.do_ontology_pull(ontology_acronym, enable_pull_umls = false, umls_download_url = '', logger = nil,
+                                add_to_queue = true)
         logger ||= Logger.new($stdout)
         ont = LinkedData::Models::Ontology.find(ontology_acronym).include(:acronym).first
         new_submission = nil
         raise StandardError, "Ontology #{ontology_acronym} not found" if ont.nil?
 
         last = ont.latest_submission(status: :any)
-        raise NoSubmissionException.new(ontology_acronym) if last.nil?
+        raise StandardError, "No submission found for #{ontology_acronym}" if last.nil?
 
         last.bring(:hasOntologyLanguage) if last.bring?(:hasOntologyLanguage)
         if !enable_pull_umls && last.hasOntologyLanguage.umls?
@@ -64,7 +44,7 @@ module NcboCron
         end
 
         last.bring(:pullLocation) if last.bring?(:pullLocation)
-        raise MissingPullLocationException.new(ontology_acronym) if last.pullLocation.nil?
+        raise StandardError, "#{ontology_acronym} has no pullLocation" if last.pullLocation.nil?
 
         last.bring(:uploadFilePath) if last.bring?(:uploadFilePath)
 
@@ -74,23 +54,26 @@ module NcboCron
           logger.flush
         end
 
-        raise self::RemoteFileException.new(last) unless last.remote_file_exists?(last.pullLocation.to_s)
-        logger.info "Checking download for #{ont.acronym}"
-        logger.info "Location: #{last.pullLocation.to_s}"; logger.flush
-        file, filename = last.download_ontology_file
-        file, md5local, md5remote, new_file_exists = self.new_file_exists?(file, last)
+        if last.remote_file_exists?(last.pullLocation.to_s)
+          logger.info "Checking download for #{ont.acronym}"
+          logger.info "Location: #{last.pullLocation.to_s}"; logger.flush
+          file, filename = last.download_ontology_file
+          file, md5local, md5remote, new_file_exists = self.new_file_exists?(file, last)
 
-        if new_file_exists
-          logger.info "New file found for #{ont.acronym}\nold: #{md5local}\nnew: #{md5remote}"
-          logger.flush()
-          new_submission = self.create_submission(ont, last, file, filename, logger, add_to_queue)
+          if new_file_exists
+            logger.info "New file found for #{ont.acronym}\nold: #{md5local}\nnew: #{md5remote}"
+            logger.flush()
+            new_submission = self.create_submission(ont, last, file, filename, logger, add_to_queue)
+          else
+            logger.info "There is no new file found for #{ont.acronym}"
+            logger.flush()
+          end
+
+          file.close
+          new_submission
         else
-          logger.info "There is no new file found for #{ont.acronym}"
-          logger.flush()
+          raise RemoteFileException.new(last)
         end
-
-        file.close
-        new_submission
       end
 
       def self.create_submission(ont, sub, file, filename, logger = nil, add_to_queue = true, new_version = nil,
@@ -120,17 +103,32 @@ module NcboCron
         new_sub.submissionStatus = nil
         new_sub.creationDate = nil
         new_sub.missingImports = nil
-        new_sub.masterFileName = nil
         new_sub.metrics = nil
         full_file_path = File.expand_path(file_location)
 
         # check if OWLAPI is able to parse the file before creating a new submission
-        if new_sub.parsable?(logger: logger)
+        owlapi = LinkedData::Parser::OWLAPICommand.new(
+          full_file_path,
+          File.expand_path(new_sub.data_folder.to_s),
+          logger: logger)
+        owlapi.disable_reasoner
+        parsable = true
+
+        begin
+          owlapi.parse
+        rescue Exception => e
+          logger.error("The new file for ontology #{ont.acronym}, submission id: #{submission_id} did not clear OWLAPI: #{e.class}: #{e.message}\n#{e.backtrace.join("\n\t")}")
+          logger.error("A new submission has NOT been created.")
+          logger.flush
+          parsable = false
+        end
+
+        if parsable
           if new_sub.valid?
-            new_sub.save
+            new_sub.save()
 
             if add_to_queue
-              queue_submission(new_sub, { all: true })
+              self.queue_submission(new_sub, { all: true })
               logger.info("OntologyPull created a new submission (#{submission_id}) for ontology #{ont.acronym}")
             end
           else
@@ -138,9 +136,6 @@ module NcboCron
             logger.flush
           end
         else
-          logger.error("The new file for ontology #{ont.acronym}, submission id: #{submission_id} did not clear OWLAPI: #{e.class}: #{e.message}\n#{e.backtrace.join("\n\t")}")
-          logger.error("A new submission has NOT been created.")
-          logger.flush
           # delete the bad file
           File.delete full_file_path if File.exist? full_file_path
         end

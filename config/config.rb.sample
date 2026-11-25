@@ -1,13 +1,13 @@
 # This file is designed to be used for unit testing with docker-compose
 
-GOO_BACKEND_NAME      = ENV.include?("GOO_BACKEND_NAME")      ? ENV["GOO_BACKEND_NAME"]      : "4store"
+GOO_BACKEND_NAME      = ENV.include?("GOO_BACKEND_NAME")      ? ENV["GOO_BACKEND_NAME"]      : "virtuoso"
 GOO_HOST              = ENV.include?("GOO_HOST")              ? ENV["GOO_HOST"]              : "localhost"
-GOO_PATH_DATA         = ENV.include?("GOO_PATH_DATA")         ? ENV["GOO_PATH_DATA"]         : "/data/"
+GOO_PATH_DATA         = ENV.include?("GOO_PATH_DATA")         ? ENV["GOO_PATH_DATA"]         : "/sparql/"
 GOO_PATH_QUERY        = ENV.include?("GOO_PATH_QUERY")        ? ENV["GOO_PATH_QUERY"]        : "/sparql/"
-GOO_PATH_UPDATE       = ENV.include?("GOO_PATH_UPDATE")       ? ENV["GOO_PATH_UPDATE"]       : "/update/"
-GOO_PORT              = ENV.include?("GOO_PORT")              ? ENV["GOO_PORT"]              : 9000
+GOO_PATH_UPDATE       = ENV.include?("GOO_PATH_UPDATE")       ? ENV["GOO_PATH_UPDATE"]       : "/sparql/"
+GOO_PORT              = ENV.include?("GOO_PORT")              ? ENV["GOO_PORT"]              : 8890
 MGREP_HOST            = ENV.include?("MGREP_HOST")            ? ENV["MGREP_HOST"]            : "localhost"
-MGREP_PORT            = ENV.include?("MGREP_PORT")            ? ENV["MGREP_PORT"]            : 55555
+MGREP_PORT            = ENV.include?("MGREP_PORT")            ? ENV["MGREP_PORT"]            : 55556
 MGREP_DICT_PATH       = ENV.include?("MGREP_DICT_PATH")       ? ENV["MGREP_DICT_PATH"]       : "./test/data/dictionary.txt"
 REDIS_GOO_CACHE_HOST  = ENV.include?("REDIS_GOO_CACHE_HOST")  ? ENV["REDIS_GOO_CACHE_HOST"]  : "localhost"
 REDIS_HTTP_CACHE_HOST = ENV.include?("REDIS_HTTP_CACHE_HOST") ? ENV["REDIS_HTTP_CACHE_HOST"] : "localhost"
@@ -16,8 +16,9 @@ REDIS_PORT            = ENV.include?("REDIS_PORT")            ? ENV["REDIS_PORT"
 REPORT_PATH           = ENV.include?("REPORT_PATH")           ? ENV["REPORT_PATH"]           : "./test/tmp/ontologies_report.json"
 REPOSITORY_FOLDER     = ENV.include?("REPOSITORY_FOLDER")     ? ENV["REPOSITORY_FOLDER"]     : "./test/data/ontology_files/repo"
 REST_URL_PREFIX       = ENV.include?("REST_URL_PREFIX")       ? ENV["REST_URL_PREFIX"]       : "http://localhost:9393"
-SOLR_PROP_SEARCH_URL  = ENV.include?("SOLR_PROP_SEARCH_URL")  ? ENV["SOLR_PROP_SEARCH_URL"]  : "http://localhost:8983/solr/prop_search_core1"
-SOLR_TERM_SEARCH_URL  = ENV.include?("SOLR_TERM_SEARCH_URL")  ? ENV["SOLR_TERM_SEARCH_URL"]  : "http://localhost:8983/solr/term_search_core1"
+SOLR_PROP_SEARCH_URL  = ENV.include?("SOLR_PROP_SEARCH_URL")  ? ENV["SOLR_PROP_SEARCH_URL"]  : "http://localhost:8983/solr"
+SOLR_TERM_SEARCH_URL  = ENV.include?("SOLR_TERM_SEARCH_URL")  ? ENV["SOLR_TERM_SEARCH_URL"]  : "http://localhost:8983/solr"
+GOO_SLICES = ENV["GOO_SLICES"] || 500
 
 LinkedData.config do |config|
   config.goo_backend_name              = GOO_BACKEND_NAME.to_s
@@ -37,6 +38,13 @@ LinkedData.config do |config|
   config.property_search_server_url    = SOLR_PROP_SEARCH_URL.to_s
 #  config.replace_url_prefix            = false
 #  config.rest_url_prefix               = REST_URL_PREFIX.to_s
+   # Used to define other bioportal that can be mapped to
+   # Example to map to ncbo bioportal : {"ncbo" => {"api" => "http://data.bioontology.org", "ui" => "http://bioportal.bioontology.org", "apikey" => ""}
+   # Then create the mapping using the following class in JSON : "http://purl.bioontology.org/ontology/MESH/C585345": "ncbo:MESH"
+   # Where "ncbo" is the namespace used as key in the interportal_hash
+   config.interportal_hash   = {"ncbo" => {"api" => "http://data.bioontology.org", "ui" => "http://bioportal.bioontology.org", "apikey" => ""},
+                                   "agroportal" => {"api" => "http://data.agroportal.lirmm.fr", "ui" => "http://agroportal.lirmm.fr", "apikey" => ""}}
+
   # Email notifications.
   config.enable_notifications    = true
   config.email_sender            = "sender@domain.com" # Default sender for emails
@@ -66,31 +74,25 @@ NcboCron.config do |config|
   # do not deaemonize in docker
   config.daemonize  = false
 
-  config.search_index_all_url = "http://localhost:8983/solr/term_search_core2"
-  config.property_search_index_all_url = "http://localhost:8983/solr/prop_search_core2"
-
-  # Sample configuration for Cloudflare Analytics integration
-  # Cloudflare Zone Tag (unique identifier for your Cloudflare zone)
-  config.cloudflare_zone_tag  = 'your-zone-tag-here'
-  # API token with read-only access to the Cloudflare GraphQL Analytics API
-  # Recommended scopes: Zone.Analytics:Read
-  config.cloudflare_api_token = 'your-cloudflare-api-token-here'
-  # Path to the JSON file where ontology pageview data is stored and updated
-  config.cloudflare_data_file = 'config/data/bp_cf_data.json'
+  config.search_index_all_url = "http://localhost:8983/solr"
+  config.property_search_index_all_url = "http://localhost:8983/solr"
 
   # Google Analytics GA4 config
   config.analytics_path_to_key_file     = "config/your_analytics_key.json"
   config.analytics_property_id          = "123456789"
-  # path to the Universal Analytics data, which stopped collecting on June 1st, 2023
-  config.analytics_path_to_ua_data_file = "data/your_ua_data.json"
+
   # path to the file that will hold your Google Analytics data
   # this is in addition to storing it in Redis
   config.analytics_path_to_ga_data_file = "data/your_ga_data.json"
-
+  config.analytics_start_date                    = '2015-01-01'
   # this is a Base64.encode64 encoded personal access token
   # you need to run Base64.decode64 on it before using it in your code
   # this is a workaround because Github does not allow storing access tokens in a repo
   config.git_repo_access_token = "YOUR GITHUB REPO PERSONAL ACCESS TOKEN, encoded using Base64"
+
+  config.pull_schedule_long ||= "00 12 1 * *"
+  config.pull_long_ontologies ||= ["AGROVOC"]
 end
 
 Goo.use_cache = true
+Goo.slice_loading_size = GOO_SLICES.to_i
